@@ -1,5 +1,6 @@
 mod cli;
 mod commands;
+mod pager;
 mod popup;
 mod state;
 mod x11;
@@ -43,6 +44,7 @@ fn run_command(command: Command, x11: &X11Connection, state: &mut DesktopState) 
         }
         Command::Windows => list_windows(x11, state),
         Command::Identify => handle_identify(x11, state),
+        Command::Gui => handle_gui(x11, state),
     }
 }
 
@@ -101,4 +103,9 @@ fn handle_set_desktops(x11: &X11Connection, state: &mut DesktopState, count: u32
 fn handle_identify(x11: &X11Connection, state: &DesktopState) -> Result<()> {
     popup::show_desktop_popup(x11, state.current)?;
     Ok(())
+}
+
+fn handle_gui(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
+    // Run pager as persistent toolbar (runs forever until killed)
+    pager::run_pager(x11, state)
 }

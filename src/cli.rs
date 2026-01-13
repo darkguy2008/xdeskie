@@ -41,4 +41,7 @@ pub enum Command {
 
     /// Show current desktop number in a popup window
     Identify,
+
+    /// Show a pager UI for switching desktops
+    Gui,
 }

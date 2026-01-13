@@ -51,6 +51,9 @@ xdeskie prev
 # Show current desktop number in a popup
 xdeskie identify
 
+# Run pager toolbar (persistent, stays open)
+xdeskie gui &
+
 # Move active window to desktop 2
 xdeskie move active 2
 
@@ -78,6 +81,7 @@ xdeskie windows
 | `next` | Switch to next desktop (wraps around) |
 | `prev` | Switch to previous desktop (wraps around) |
 | `identify` | Show current desktop number in a centered popup window |
+| `gui` | Run a persistent pager toolbar (click to switch desktops) |
 | `move <window> <desktop>` | Move window to desktop (0 = sticky) |
 | `set-desktops <count>` | Set number of virtual desktops |
 | `list` | List all desktops |
