@@ -8,6 +8,7 @@ use x11rb::rust_connection::RustConnection;
 pub struct X11Connection {
     conn: RustConnection,
     root: Window,
+    screen_num: usize,
 }
 
 #[derive(Debug)]
@@ -23,7 +24,29 @@ impl X11Connection {
         let screen = &conn.setup().roots[screen_num];
         let root = screen.root;
 
-        Ok(Self { conn, root })
+        Ok(Self { conn, root, screen_num })
+    }
+
+    /// Get reference to the X11 connection
+    pub fn conn(&self) -> &RustConnection {
+        &self.conn
+    }
+
+    /// Get the root window ID
+    pub fn root(&self) -> Window {
+        self.root
+    }
+
+    /// Get screen dimensions
+    pub fn screen_size(&self) -> (u16, u16) {
+        let screen = &self.conn.setup().roots[self.screen_num];
+        (screen.width_in_pixels, screen.height_in_pixels)
+    }
+
+    /// Get screen pixels (white and black)
+    pub fn screen_pixels(&self) -> (u32, u32) {
+        let screen = &self.conn.setup().roots[self.screen_num];
+        (screen.white_pixel, screen.black_pixel)
     }
 
     /// Get the currently focused window
@@ -221,5 +244,25 @@ impl X11Connection {
             .collect();
 
         Ok(values.into_iter().next())
+    }
+
+    /// Delete a property from root window
+    pub fn delete_root_property(&self, name: &[u8]) -> Result<()> {
+        let atom = self.conn.intern_atom(false, name)?.reply()?.atom;
+        self.conn.delete_property(self.root, atom)?;
+        self.conn.flush()?;
+        Ok(())
+    }
+
+    /// Destroy a window
+    pub fn destroy_window(&self, window: u32) -> Result<()> {
+        self.conn.destroy_window(window)?;
+        self.conn.flush()?;
+        Ok(())
+    }
+
+    /// Generate a new window ID
+    pub fn generate_id(&self) -> Result<u32> {
+        Ok(self.conn.generate_id()?)
     }
 }

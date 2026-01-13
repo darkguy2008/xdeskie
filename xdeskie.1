@@ -53,6 +53,9 @@ Print the current desktop number (1-indexed).
 .TP
 .B windows
 List all managed windows and their assigned desktops.
+.TP
+.B identify
+Show the current desktop number in a centered popup window for one second. Useful for visual feedback when switching desktops via keybindings.
 .SH FILES
 .TP
 .I $XDG_CONFIG_HOME/xdeskie/state.json
@@ -106,6 +109,14 @@ List all windows and their desktop assignments:
 .RS
 .nf
 xdeskie windows
+.fi
+.RE
+.PP
+Switch to next desktop with visual feedback:
+.PP
+.RS
+.nf
+xdeskie next && xdeskie identify
 .fi
 .RE
 .SH AUTHOR

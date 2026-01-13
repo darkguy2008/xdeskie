@@ -38,4 +38,7 @@ pub enum Command {
 
     /// List all windows and their assigned desktops
     Windows,
+
+    /// Show current desktop number in a popup window
+    Identify,
 }

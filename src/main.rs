@@ -1,5 +1,6 @@
 mod cli;
 mod commands;
+mod popup;
 mod state;
 mod x11;
 
@@ -41,6 +42,7 @@ fn run_command(command: Command, x11: &X11Connection, state: &mut DesktopState) 
             Ok(())
         }
         Command::Windows => list_windows(x11, state),
+        Command::Identify => handle_identify(x11, state),
     }
 }
 
@@ -93,5 +95,10 @@ fn handle_move(
 fn handle_set_desktops(x11: &X11Connection, state: &mut DesktopState, count: u32) -> Result<()> {
     set_desktop_count(x11, state, count)?;
     println!("Set desktop count to {}", count);
+    Ok(())
+}
+
+fn handle_identify(x11: &X11Connection, state: &DesktopState) -> Result<()> {
+    popup::show_desktop_popup(x11, state.current)?;
     Ok(())
 }
