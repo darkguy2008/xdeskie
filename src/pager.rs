@@ -8,7 +8,7 @@ use x11rb::protocol::Event;
 use x11rb::wrapper::ConnectionExt as WrapperConnectionExt;
 use x11rb::COPY_DEPTH_FROM_PARENT;
 
-use crate::commands::switch_to_desktop;
+use crate::commands::{move_window, switch_to_desktop};
 use crate::state::DesktopState;
 use crate::x11::X11Connection;
 
@@ -21,8 +21,10 @@ const PROP_CURRENT: &[u8] = b"_XDESKIE_CURRENT_DESKTOP";
 
 // X11 mouse buttons
 const BUTTON_LEFT: u8 = 1;
+const BUTTON_RIGHT: u8 = 3;
 const BUTTON_SCROLL_UP: u8 = 4;
 const BUTTON_SCROLL_DOWN: u8 = 5;
+
 
 /// Holds the pager window state for recreation
 struct PagerWindow {
@@ -191,6 +193,19 @@ pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
                             }
                         }
                     }
+                    BUTTON_RIGHT => {
+                        // Right click - grab pointer and let user click a window to move to this desktop
+                        if let Some(target) = get_clicked_desktop(&ev, num_desktops, pager.win_width, pager.win_height) {
+                            if let Ok(Some(window_id)) = grab_window_pick(x11) {
+                                // Move the selected window to the target desktop (1-indexed for move_window)
+                                if let Err(e) = move_window(x11, state, window_id, target + 1) {
+                                    eprintln!("xdeskie: failed to move window: {}", e);
+                                }
+                            }
+                            // Redraw pager in case we need to refresh
+                            draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
+                        }
+                    }
                     BUTTON_SCROLL_UP => {
                         // Scroll up - previous desktop (no wrap)
                         if current > 0 {
@@ -345,4 +360,66 @@ fn get_clicked_desktop(ev: &ButtonPressEvent, num_desktops: u32, win_width: u16,
     }
 
     None
+}
+
+/// Grab the pointer and let user click on a window to select it (like xwininfo)
+/// Returns the window ID of the clicked window, or None if cancelled (right-click/escape)
+fn grab_window_pick(x11: &X11Connection) -> Result<Option<u32>> {
+    let conn = x11.conn();
+    let root = x11.root();
+
+    // Create a crosshair cursor for visual feedback
+    let cursor_font = conn.generate_id()?;
+    conn.open_font(cursor_font, b"cursor")?;
+
+    let cursor = conn.generate_id()?;
+    // 34 is the crosshair cursor in the cursor font
+    conn.create_glyph_cursor(cursor, cursor_font, cursor_font, 34, 35, 0, 0, 0, 0xFFFF, 0xFFFF, 0xFFFF)?;
+
+    // Grab the pointer on root window with crosshair cursor
+    let grab_result = conn.grab_pointer(
+        false,
+        root,
+        (EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE).into(),
+        x11rb::protocol::xproto::GrabMode::ASYNC,
+        x11rb::protocol::xproto::GrabMode::ASYNC,
+        x11rb::NONE,
+        cursor,
+        x11rb::CURRENT_TIME,
+    )?.reply()?;
+
+    if grab_result.status != x11rb::protocol::xproto::GrabStatus::SUCCESS {
+        conn.free_cursor(cursor)?;
+        conn.close_font(cursor_font)?;
+        return Ok(None);
+    }
+
+    conn.flush()?;
+
+    // Wait for a button press
+    let result = loop {
+        let event = conn.wait_for_event()?;
+        match event {
+            Event::ButtonPress(ev) => {
+                if ev.detail == BUTTON_LEFT {
+                    // Left click - find the window under cursor
+                    // ev.child is the window clicked on (or 0 if root)
+                    let window = if ev.child != 0 { ev.child } else { root };
+                    break Some(window);
+                } else {
+                    // Right click or other - cancel
+                    break None;
+                }
+            }
+            _ => {}
+        }
+    };
+
+    // Cleanup
+    conn.ungrab_pointer(x11rb::CURRENT_TIME)?;
+    conn.free_cursor(cursor)?;
+    conn.close_font(cursor_font)?;
+    conn.flush()?;
+
+    Ok(result)
 }
