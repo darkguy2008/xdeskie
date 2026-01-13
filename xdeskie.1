@@ -1,0 +1,117 @@
+.TH XDESKIE 1 "January 2026" "xdeskie 0.1.0" "User Commands"
+.SH NAME
+xdeskie \- virtual desktop manager for X11 window managers
+.SH SYNOPSIS
+.B xdeskie
+.I command
+.RI [ arguments ]
+.SH DESCRIPTION
+.B xdeskie
+is a virtual desktop manager designed for TWM and similar minimalist X11 window managers that do not support the EWMH (Extended Window Manager Hints) specification for virtual desktops.
+.PP
+It provides virtual desktop functionality by managing window visibility through mapping and unmapping, storing desktop assignments in a persistent state file.
+.SH COMMANDS
+.TP
+.BI switch " desktop"
+Switch to desktop
+.IR desktop .
+Desktop numbers are 1-indexed.
+.TP
+.B next
+Switch to the next desktop. Wraps around to desktop 1 when at the last desktop.
+.TP
+.B prev
+Switch to the previous desktop. Wraps around to the last desktop when at desktop 1.
+.TP
+.BI move " window desktop"
+Move
+.I window
+to
+.IR desktop .
+Use desktop 0 to make a window sticky (visible on all desktops).
+.I window
+can be specified as:
+.RS
+.IP \(bu 2
+.B active
+\- the currently focused window
+.IP \(bu 2
+A hexadecimal window ID (e.g., 0x1234567)
+.IP \(bu 2
+A decimal window ID
+.RE
+.TP
+.BI set-desktops " count"
+Set the number of virtual desktops to
+.IR count .
+.TP
+.B list
+List all desktops with their indices.
+.TP
+.B current
+Print the current desktop number (1-indexed).
+.TP
+.B windows
+List all managed windows and their assigned desktops.
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/xdeskie/state.json
+Persistent state file containing desktop assignments and configuration. If
+.B XDG_CONFIG_HOME
+is not set, defaults to
+.IR ~/.config/xdeskie/state.json .
+.SH EXAMPLES
+Switch to desktop 3:
+.PP
+.RS
+.nf
+xdeskie switch 3
+.fi
+.RE
+.PP
+Move the active window to desktop 2:
+.PP
+.RS
+.nf
+xdeskie move active 2
+.fi
+.RE
+.PP
+Make a specific window sticky (visible on all desktops):
+.PP
+.RS
+.nf
+xdeskie move 0x1400007 0
+.fi
+.RE
+.PP
+Cycle to the next desktop:
+.PP
+.RS
+.nf
+xdeskie next
+.fi
+.RE
+.PP
+Set up 4 virtual desktops:
+.PP
+.RS
+.nf
+xdeskie set-desktops 4
+.fi
+.RE
+.PP
+List all windows and their desktop assignments:
+.PP
+.RS
+.nf
+xdeskie windows
+.fi
+.RE
+.SH AUTHOR
+DARKGuy
+.SH SEE ALSO
+.BR twm (1),
+.BR xprop (1),
+.BR xwininfo (1),
+.BR xtabbie (1)
