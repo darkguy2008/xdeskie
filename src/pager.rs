@@ -1,7 +1,7 @@
 use anyhow::Result;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    ButtonPressEvent, ConfigureNotifyEvent, ConnectionExt, CreateGCAux, CreateWindowAux,
+    Atom, ButtonPressEvent, ConfigureNotifyEvent, ConnectionExt, CreateGCAux, CreateWindowAux,
     EventMask, ExposeEvent, Gcontext, PropertyNotifyEvent, Rectangle, Window, WindowClass,
 };
 use x11rb::protocol::Event;
@@ -24,24 +24,33 @@ const BUTTON_LEFT: u8 = 1;
 const BUTTON_SCROLL_UP: u8 = 4;
 const BUTTON_SCROLL_DOWN: u8 = 5;
 
-/// Run the pager as a persistent floating toolbar.
-/// This function runs indefinitely until the process is killed.
-pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
-    let conn = x11.conn();
-    let root = x11.root();
-    let (screen_width, screen_height) = x11.screen_size();
-    let (white_pixel, black_pixel) = x11.screen_pixels();
+/// Holds the pager window state for recreation
+struct PagerWindow {
+    win_id: Window,
+    gc_id: Gcontext,
+    gc_inv_id: Gcontext,
+    win_width: u16,
+    win_height: u16,
+    wm_delete_window: Atom,
+}
 
-    let num_desktops = state.desktops;
-    let mut current = state.current;
-
+/// Create a new pager window
+fn create_pager_window(
+    conn: &impl Connection,
+    root: Window,
+    screen_width: u16,
+    screen_height: u16,
+    white_pixel: u32,
+    black_pixel: u32,
+    num_desktops: u32,
+) -> Result<PagerWindow> {
     // Calculate initial window size
-    let mut win_width = num_desktops as u16 * (DEFAULT_CELL_SIZE + PADDING) + PADDING;
-    let mut win_height = DEFAULT_CELL_SIZE + PADDING * 2;
+    let win_width = num_desktops as u16 * (DEFAULT_CELL_SIZE + PADDING) + PADDING;
+    let win_height = DEFAULT_CELL_SIZE + PADDING * 2;
 
     // Position at bottom center
     let x = (screen_width.saturating_sub(win_width)) / 2;
-    let y = screen_height.saturating_sub(win_height + 50); // Near bottom, with margin for taskbar
+    let y = screen_height.saturating_sub(win_height + 50);
 
     let win_id = conn.generate_id()?;
     let gc_id = conn.generate_id()?;
@@ -63,13 +72,6 @@ pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
             .background_pixel(white_pixel)
             .border_pixel(black_pixel)
             .event_mask(EventMask::EXPOSURE | EventMask::BUTTON_PRESS | EventMask::STRUCTURE_NOTIFY),
-    )?;
-
-    // Subscribe to property changes on root window to detect desktop switches
-    conn.change_window_attributes(
-        root,
-        &x11rb::protocol::xproto::ChangeWindowAttributesAux::new()
-            .event_mask(EventMask::PROPERTY_CHANGE),
     )?;
 
     // Create graphics contexts
@@ -113,36 +115,79 @@ pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
     conn.map_window(win_id)?;
     conn.flush()?;
 
-    // Draw initial state
-    draw_pager(conn, win_id, gc_id, gc_inv_id, num_desktops, current, win_width, win_height)?;
+    Ok(PagerWindow {
+        win_id,
+        gc_id,
+        gc_inv_id,
+        win_width,
+        win_height,
+        wm_delete_window,
+    })
+}
+
+/// Run the pager as a persistent floating toolbar.
+/// This function runs indefinitely until the process is killed.
+/// If the window is destroyed externally, it will be automatically recreated.
+pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
+    let conn = x11.conn();
+    let root = x11.root();
+    let (screen_width, screen_height) = x11.screen_size();
+    let (white_pixel, black_pixel) = x11.screen_pixels();
+
+    let num_desktops = state.desktops;
+    let mut current = state.current;
+
+    // Subscribe to property changes on root window to detect desktop switches
+    conn.change_window_attributes(
+        root,
+        &x11rb::protocol::xproto::ChangeWindowAttributesAux::new()
+            .event_mask(EventMask::PROPERTY_CHANGE),
+    )?;
 
     // Get the atom for desktop property
     let current_atom = conn.intern_atom(false, PROP_CURRENT)?.reply()?.atom;
+
+    // Create initial window
+    let mut pager = create_pager_window(conn, root, screen_width, screen_height, white_pixel, black_pixel, num_desktops)?;
+
+    // Draw initial state
+    draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
 
     // Event loop - runs forever
     loop {
         let event = conn.wait_for_event()?;
         match event {
-            Event::Expose(ExposeEvent { window, count: 0, .. }) if window == win_id => {
-                draw_pager(conn, win_id, gc_id, gc_inv_id, num_desktops, current, win_width, win_height)?;
+            Event::Expose(ExposeEvent { window, count: 0, .. }) if window == pager.win_id => {
+                draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
             }
-            Event::ConfigureNotify(ConfigureNotifyEvent { window, width, height, .. }) if window == win_id => {
+            Event::ConfigureNotify(ConfigureNotifyEvent { window, width, height, .. }) if window == pager.win_id => {
                 // Window was resized
-                if width != win_width || height != win_height {
-                    win_width = width;
-                    win_height = height;
-                    draw_pager(conn, win_id, gc_id, gc_inv_id, num_desktops, current, win_width, win_height)?;
+                if width != pager.win_width || height != pager.win_height {
+                    pager.win_width = width;
+                    pager.win_height = height;
+                    draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
                 }
             }
-            Event::ButtonPress(ev) if ev.event == win_id => {
+            Event::DestroyNotify(ev) if ev.window == pager.win_id => {
+                // Window was destroyed externally - recreate it
+                eprintln!("xdeskie: pager window destroyed, recreating...");
+                pager = create_pager_window(conn, root, screen_width, screen_height, white_pixel, black_pixel, num_desktops)?;
+                draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
+            }
+            Event::UnmapNotify(ev) if ev.window == pager.win_id => {
+                // Window was unmapped - remap it to keep it visible
+                conn.map_window(pager.win_id)?;
+                conn.flush()?;
+            }
+            Event::ButtonPress(ev) if ev.event == pager.win_id => {
                 match ev.detail {
                     BUTTON_LEFT => {
                         // Left click - switch to clicked desktop
-                        if let Some(target) = get_clicked_desktop(&ev, num_desktops, win_width, win_height) {
+                        if let Some(target) = get_clicked_desktop(&ev, num_desktops, pager.win_width, pager.win_height) {
                             if target != current {
                                 switch_to_desktop(x11, state, target)?;
                                 current = target;
-                                draw_pager(conn, win_id, gc_id, gc_inv_id, num_desktops, current, win_width, win_height)?;
+                                draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
                             }
                         }
                     }
@@ -152,7 +197,7 @@ pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
                             let prev = current - 1;
                             switch_to_desktop(x11, state, prev)?;
                             current = prev;
-                            draw_pager(conn, win_id, gc_id, gc_inv_id, num_desktops, current, win_width, win_height)?;
+                            draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
                         }
                     }
                     BUTTON_SCROLL_DOWN => {
@@ -161,7 +206,7 @@ pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
                             let next = current + 1;
                             switch_to_desktop(x11, state, next)?;
                             current = next;
-                            draw_pager(conn, win_id, gc_id, gc_inv_id, num_desktops, current, win_width, win_height)?;
+                            draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
                         }
                     }
                     _ => {}
@@ -173,15 +218,15 @@ pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
                     if new_current != current {
                         current = new_current;
                         state.current = current;
-                        draw_pager(conn, win_id, gc_id, gc_inv_id, num_desktops, current, win_width, win_height)?;
+                        draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
                     }
                 }
             }
-            Event::ClientMessage(ev) if ev.window == win_id => {
+            Event::ClientMessage(ev) if ev.window == pager.win_id => {
                 // Check for WM_DELETE_WINDOW
-                if ev.format == 32 && ev.data.as_data32()[0] == wm_delete_window {
+                if ev.format == 32 && ev.data.as_data32()[0] == pager.wm_delete_window {
                     // User clicked close button - exit gracefully
-                    conn.destroy_window(win_id)?;
+                    conn.destroy_window(pager.win_id)?;
                     conn.flush()?;
                     return Ok(());
                 }
