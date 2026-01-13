@@ -13,6 +13,7 @@ Features:
 - Sticky windows (visible on all desktops)
 - Persistent state across sessions
 - Visual desktop identification popup
+- Resizable pager toolbar with mouse wheel support
 - Works with TWM and similar minimal WMs
 
 ## Building
@@ -81,7 +82,7 @@ xdeskie windows
 | `next` | Switch to next desktop (wraps around) |
 | `prev` | Switch to previous desktop (wraps around) |
 | `identify` | Show current desktop number in a centered popup window |
-| `gui` | Run a persistent pager toolbar (click to switch desktops) |
+| `gui` | Run a resizable pager toolbar (click or scroll to switch) |
 | `move <window> <desktop>` | Move window to desktop (0 = sticky) |
 | `set-desktops <count>` | Set number of virtual desktops |
 | `list` | List all desktops |
