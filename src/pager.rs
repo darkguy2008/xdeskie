@@ -1,8 +1,9 @@
 use anyhow::Result;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    Atom, ButtonPressEvent, ConfigureNotifyEvent, ConnectionExt, CreateGCAux, CreateWindowAux,
-    EventMask, ExposeEvent, Gcontext, PropertyNotifyEvent, Rectangle, Window, WindowClass,
+    Atom, ButtonPressEvent, ConfigureNotifyEvent, ConfigureWindowAux, ConnectionExt, CreateGCAux,
+    CreateWindowAux, EventMask, ExposeEvent, Gcontext, PropertyNotifyEvent, Rectangle, StackMode,
+    Window, WindowClass,
 };
 use x11rb::protocol::Event;
 use x11rb::wrapper::ConnectionExt as WrapperConnectionExt;
@@ -189,6 +190,8 @@ pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
                             if target != current {
                                 switch_to_desktop(x11, state, target)?;
                                 current = target;
+                                // Raise pager to stay on top of newly visible windows
+                                conn.configure_window(pager.win_id, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
                                 draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
                             }
                         }
@@ -212,6 +215,7 @@ pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
                             let prev = current - 1;
                             switch_to_desktop(x11, state, prev)?;
                             current = prev;
+                            conn.configure_window(pager.win_id, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
                             draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
                         }
                     }
@@ -221,6 +225,7 @@ pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
                             let next = current + 1;
                             switch_to_desktop(x11, state, next)?;
                             current = next;
+                            conn.configure_window(pager.win_id, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
                             draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
                         }
                     }
@@ -233,6 +238,7 @@ pub fn run_pager(x11: &X11Connection, state: &mut DesktopState) -> Result<()> {
                     if new_current != current {
                         current = new_current;
                         state.current = current;
+                        conn.configure_window(pager.win_id, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
                         draw_pager(conn, pager.win_id, pager.gc_id, pager.gc_inv_id, num_desktops, current, pager.win_width, pager.win_height)?;
                     }
                 }
