@@ -10,13 +10,21 @@ use crate::x11::X11Connection;
 /// - Detecting app-hidden windows (windows hidden by the app itself)
 /// - Cleaning up dead windows from state
 /// - Mapping/unmapping windows based on target desktop visibility
+/// - Preserving window stacking order per desktop
 pub fn switch_to_desktop(x11: &X11Connection, state: &mut DesktopState, target: u32) -> Result<()> {
     let infos = x11.get_all_window_info()?;
     let window_ids: Vec<u32> = infos.iter().map(|i| i.id).collect();
 
     detect_new_windows(state, &infos);
     state.cleanup_dead_windows(&window_ids);
+
+    // Save current desktop's stacking order before switching
+    save_stacking_order(x11, state, state.current)?;
+
     update_window_visibility(x11, state, &infos, target)?;
+
+    // Restore target desktop's stacking order
+    restore_stacking_order(x11, state, target)?;
 
     state.current = target;
     state.sync_to_x(x11)?;
@@ -56,6 +64,41 @@ fn update_window_visibility(
         } else {
             x11.unmap_window(info.id)?;
         }
+    }
+    Ok(())
+}
+
+/// Save the current stacking order for a desktop.
+fn save_stacking_order(x11: &X11Connection, state: &mut DesktopState, desktop: u32) -> Result<()> {
+    let stacking = x11.get_stacking_order()?;
+
+    // Filter to only windows visible on this desktop
+    let desktop_stacking: Vec<String> = stacking
+        .into_iter()
+        .filter(|&id| state.is_visible_on(id, desktop))
+        .map(|id| id.to_string())
+        .collect();
+
+    state.stacking.insert(desktop, desktop_stacking);
+    Ok(())
+}
+
+/// Restore the stacking order for a desktop.
+fn restore_stacking_order(x11: &X11Connection, state: &DesktopState, desktop: u32) -> Result<()> {
+    if let Some(order) = state.stacking.get(&desktop) {
+        // Convert string IDs back to u32 and filter out any that no longer exist
+        let current_windows: std::collections::HashSet<u32> = x11
+            .get_stacking_order()?
+            .into_iter()
+            .collect();
+
+        let order: Vec<u32> = order
+            .iter()
+            .filter_map(|s| s.parse::<u32>().ok())
+            .filter(|id| current_windows.contains(id))
+            .collect();
+
+        x11.restack_windows(&order)?;
     }
     Ok(())
 }

@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Result};
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt, GetWindowAttributesReply, MapState, PropMode, Window,
+    AtomEnum, ConfigureWindowAux, ConnectionExt, GetWindowAttributesReply, MapState, PropMode,
+    StackMode, Window,
 };
 use x11rb::rust_connection::RustConnection;
 
@@ -264,5 +265,39 @@ impl X11Connection {
     /// Generate a new window ID
     pub fn generate_id(&self) -> Result<u32> {
         Ok(self.conn.generate_id()?)
+    }
+
+    /// Get the current stacking order of all toplevel windows (bottom to top)
+    pub fn get_stacking_order(&self) -> Result<Vec<u32>> {
+        let reply = self.conn.query_tree(self.root)?.reply()?;
+        let mut windows = Vec::new();
+
+        // query_tree returns children in bottom-to-top stacking order
+        for &child in &reply.children {
+            if self.is_application_window(child)? {
+                windows.push(child);
+            }
+        }
+
+        Ok(windows)
+    }
+
+    /// Restack windows to match the given order (bottom to top)
+    pub fn restack_windows(&self, order: &[u32]) -> Result<()> {
+        if order.len() < 2 {
+            return Ok(());
+        }
+
+        // Stack each window above the previous one
+        for i in 1..order.len() {
+            self.conn.configure_window(
+                order[i],
+                &ConfigureWindowAux::new()
+                    .sibling(order[i - 1])
+                    .stack_mode(StackMode::ABOVE),
+            )?;
+        }
+        self.conn.flush()?;
+        Ok(())
     }
 }

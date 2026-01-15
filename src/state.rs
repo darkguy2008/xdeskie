@@ -27,6 +27,10 @@ pub struct DesktopState {
     /// Windows hidden by the application itself (not by desktop switch)
     #[serde(default)]
     pub app_hidden: HashSet<String>,
+    /// Window stacking order per desktop (bottom to top)
+    /// desktop number (0-indexed) -> ordered list of window IDs
+    #[serde(default)]
+    pub stacking: HashMap<u32, Vec<String>>,
 }
 
 impl DesktopState {
@@ -49,6 +53,7 @@ impl DesktopState {
             desktops: DEFAULT_DESKTOP_COUNT,
             windows: HashMap::new(),
             app_hidden: HashSet::new(),
+            stacking: HashMap::new(),
         }
     }
 
@@ -145,6 +150,10 @@ impl DesktopState {
         let live_set: HashSet<String> = live_windows.iter().map(|id| id.to_string()).collect();
         self.windows.retain(|k, _| live_set.contains(k));
         self.app_hidden.retain(|k| live_set.contains(k));
+        // Clean up stacking orders
+        for order in self.stacking.values_mut() {
+            order.retain(|k| live_set.contains(k));
+        }
     }
 
     fn state_path() -> Result<PathBuf> {
